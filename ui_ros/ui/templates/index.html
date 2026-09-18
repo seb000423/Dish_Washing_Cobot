@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>설거지 로봇 HMI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon">DR</div>
+            <div>
+                <strong>Dish Robot</strong>
+                <span>HMI System</span>
+            </div>
+        </div>
+
+        <nav class="menu">
+            <button class="menu-item active" data-page="dashboard" onclick="showPage('dashboard')">
+                <span>⌂</span><b>Dashboard</b>
+            </button>
+            <button class="menu-item" data-page="operation" onclick="showPage('operation')">
+                <span>▶</span><b>Operation</b>
+            </button>
+            <button class="menu-item" data-page="monitoring" onclick="showPage('monitoring')">
+                <span>◉</span><b>Monitoring</b>
+            </button>
+            <button class="menu-item" data-page="alarms" onclick="showPage('alarms')">
+                <span>!</span><b>Alarms</b>
+            </button>
+            <button class="menu-item" data-page="settings" onclick="showPage('settings')">
+                <span>⚙</span><b>Settings</b>
+            </button>
+        </nav>
+
+        <div class="sidebar-bottom">
+            <div id="sideRobotState" class="side-state waiting">
+                <span></span>
+                <div>
+                    <small>Robot status</small>
+                    <strong id="sideRobotStateText">대기 중</strong>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-area">
+        <header class="top-header">
+            <div>
+                <p class="eyebrow">DOOSAN M0609 DISHWASHING SYSTEM</p>
+                <h1 id="pageTitle">Dashboard</h1>
+            </div>
+            <div class="header-actions">
+                <span id="headerClock"></span>
+                <button class="header-stop" onclick="emergencyStop()">■ 긴급 정지</button>
+            </div>
+        </header>
+
+        <section id="page-dashboard" class="page active">
+            <div class="summary-grid">
+                <article class="metric-card">
+                    <span>로봇 상태</span>
+                    <strong id="dashRobotState">대기 중</strong>
+                    <small id="dashRobotMessage">작업 명령 대기</small>
+                </article>
+                <article class="metric-card">
+                    <span>선택 식기</span>
+                    <strong id="dashDish">{{ status.selected_dish }}</strong>
+                    <small>접시 · 밥그릇 · 컵</small>
+                </article>
+                <article class="metric-card green">
+                    <span>전체 진행률</span>
+                    <strong id="dashProgress">{{ status.progress }}%</strong>
+                    <small id="dashProcess">{{ status.current_process }}</small>
+                </article>
+                <article class="metric-card">
+                    <span>오늘 완료</span>
+                    <strong id="dashTotal">0개</strong>
+                    <small>전체 식기 누적</small>
+                </article>
+            </div>
+
+            <div class="dashboard-grid">
+                <article class="panel progress-panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="section-label">CURRENT PROCESS</p>
+                            <h2>현재 작업 진행</h2>
+                        </div>
+                        <span id="dashDishBadge" class="badge">{{ status.selected_dish }}</span>
+                    </div>
+
+                    <div class="progress-layout">
+                        <div id="dashProgressRing" class="progress-ring" style="--progress: {{ status.progress }}">
+                            <div>
+                                <span>진행률</span>
+                                <strong id="dashProgressRingText">{{ status.progress }}%</strong>
+                            </div>
+                        </div>
+                        <div class="process-summary">
+                            <div class="info-box">
+                                <span>현재 단계</span>
+                                <strong id="dashCurrentProcess">{{ status.current_process }}</strong>
+                            </div>
+                            <div class="info-box green-box">
+                                <span>상태 메시지</span>
+                                <p id="dashMessage">{{ status.message }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="section-label">COMPLETED</p>
+                            <h2>완료 수량</h2>
+                        </div>
+                    </div>
+                    <div class="complete-list">
+                        {% for dish, count in status.completed.items() %}
+                        <div class="complete-row">
+                            <span>{{ dish }}</span>
+                            <strong id="dashCount-{{ dish }}">{{ count }}</strong>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </article>
+            </div>
+
+            <article class="panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="section-label">WORKFLOW</p>
+                        <h2>간단 작업 흐름</h2>
+                    </div>
+                    <button class="secondary-button" onclick="openDetailModal()">자세히 펼쳐보기</button>
+                </div>
+                <div id="dashCompactTimeline" class="compact-timeline"></div>
+            </article>
+        </section>
+
+        <section id="page-operation" class="page">
+            <div class="page-grid two">
+                <article class="panel">
+                    <p class="section-label">DISH SELECTION</p>
+                    <h2>식기 선택</h2>
+                    <div class="dish-selector large">
+                        {% for dish in status.dish_types %}
+                        <button type="button"
+                                data-dish="{{ dish }}"
+                                class="dish-button {% if dish == status.selected_dish %}selected{% endif %}"
+                                onclick="selectDish('{{ dish }}')">
+                            <span>{% if dish == "접시" %}◯{% elif dish == "밥그릇" %}◡{% else %}▱{% endif %}</span>
+                            <strong>{{ dish }}</strong>
+                        </button>
+                        {% endfor %}
+                    </div>
+                </article>
+
+                <article class="panel">
+                    <p class="section-label">ROBOT CONTROL</p>
+                    <h2>로봇 제어</h2>
+                    <div class="control-grid">
+                        <button id="startButton" class="control-button start" onclick="startRobot()">▶ 작업 시작</button>
+                        <button id="stopButton" class="control-button pause" onclick="normalStop()">■ 작업 정지</button>
+                    </div>
+
+                    <button id="emergencyButton" class="emergency-button" onclick="emergencyStop()">■ 긴급 정지</button>
+                    <button id="resetButton" class="reset-button" onclick="resetStop()">정지 리셋</button>
+
+                    <div class="manual-control-grid">
+                        <button id="homePositionButton" type="button" class="manual-control-button home-layout" onclick="goHomePosition()">
+                            <span class="manual-control-icon">⌂</span>
+                            <span class="manual-control-copy"><strong>홈 위치 이동</strong></span>
+                        </button>
+                        <button id="gripperRestartButton" type="button" class="manual-control-button restart-layout" onclick="restartGripper()">
+                            <span class="manual-control-icon">↻</span>
+                            <span class="manual-control-copy"><strong>그리퍼 다시 시작</strong></span>
+                        </button>
+                        <button id="gripperOpenButton" type="button" class="manual-control-button gripper-layout" onclick="openGripper()">
+                            <span class="manual-control-icon">⇔</span>
+                            <span class="manual-control-copy"><strong>그리퍼 열기</strong></span>
+                        </button>
+                    </div>
+                    <p id="controlHint" class="control-hint">상태 수신 대기 중입니다.</p>
+                </article>
+            </div>
+
+            <article class="panel">
+                <p class="section-label">SELECTED OPERATION</p>
+                <h2>선택 작업 정보</h2>
+                <div class="selected-operation">
+                    <div>
+                        <span>선택 식기</span>
+                        <strong id="opDish">{{ status.selected_dish }}</strong>
+                    </div>
+                    <div>
+                        <span>현재 상태</span>
+                        <strong id="opState">대기 중</strong>
+                    </div>
+                    <div>
+                        <span>현재 단계</span>
+                        <strong id="opProcess">{{ status.current_process }}</strong>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <section id="page-monitoring" class="page">
+            <div class="monitor-grid">
+                <article class="panel">
+                    <p class="section-label">PROCESS MONITORING</p>
+                    <h2>작업 진행 상태</h2>
+                    <div id="monitorTimeline" class="monitor-timeline"></div>
+                </article>
+
+                <article class="panel">
+                    <p class="section-label">SENSOR MONITORING</p>
+                    <h2>센서 및 토픽 상태</h2>
+                    <div class="sensor-list">
+                        <div><span>힘 크기</span><strong id="sensorMagnitude">0.000 N</strong></div>
+                        <div><span>Fz</span><strong id="sensorFood">0.000 N</strong></div>
+                        <div><span>그리퍼 상태</span><strong id="sensorGripper">미연동</strong></div>
+                        <div><span>로봇 상태</span><strong id="sensorMode">대기</strong></div>
+                        <div><span>ROS2 통신 상태</span><strong id="sensorConnection">수신 대기</strong></div>
+                    </div>
+
+                    <div class="topic-status-box">
+                        <h3>토픽 수신 상태</h3>
+                        <div class="topic-status-list">
+                            <div><span>/dishwasher/force/all</span><strong id="topicForceAll">수신 대기</strong></div>
+                            <div><span>/dishwasher/force/magnitude</span><strong id="topicMagnitude">수신 대기</strong></div>
+                            <div><span>/dishwasher/gripper/state</span><strong id="topicGripper">수신 대기</strong></div>
+                            <div><span>/dishwasher/gripper/safety_stop</span><strong id="topicGripperSafety">수신 대기</strong></div>
+                            <div><span>/dsr01/system/get_robot_state</span><strong id="topicProcessPlate">연결 대기</strong></div>
+                            <div><span>/dishwasher/process_bowl</span><strong id="topicProcessBowl">수신 대기</strong></div>
+                            <div><span>/dishwasher/process_cup</span><strong id="topicProcessCup">수신 대기</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="force-detail-box">
+                        <div class="force-detail-heading">
+                            <h3>전체 힘 · 모멘트</h3>
+                            <small>/dishwasher/force/all</small>
+                        </div>
+                        <div class="force-value-grid">
+                            <div><span>Fx</span><strong id="forceFx">0.000 N</strong></div>
+                            <div><span>Fy</span><strong id="forceFy">0.000 N</strong></div>
+                            <div><span>Fz</span><strong id="forceFz">0.000 N</strong></div>
+                            <div><span>Mx</span><strong id="forceMx">0.000 Nm</strong></div>
+                            <div><span>My</span><strong id="forceMy">0.000 Nm</strong></div>
+                            <div><span>Mz</span><strong id="forceMz">0.000 Nm</strong></div>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="page-alarms" class="page">
+            <article class="panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="section-label">ALARM HISTORY</p>
+                        <h2>알람 및 이상 상태</h2>
+                    </div>
+                    <span class="badge red">최근 30건</span>
+                </div>
+                <div class="alarm-table-wrap">
+                    <table class="alarm-table">
+                        <thead>
+                            <tr>
+                                <th>시간</th>
+                                <th>등급</th>
+                                <th>알람</th>
+                                <th>내용</th>
+                                <th>상태</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alarmTableBody"></tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+
+        <section id="page-settings" class="page">
+            <div class="settings-grid">
+                <article class="panel">
+                    <p class="section-label">FORCE SETTINGS</p>
+                    <h2>음식물 판정 설정</h2>
+                    <label>Fz 임계값<input id="setFoodThreshold" type="number" step="0.1" value="{{ settings.food_threshold }}"></label>
+                    <label>측정 샘플 수<input id="setSampleCount" type="number" value="{{ settings.sample_count }}"></label>
+                </article>
+
+                <article class="panel">
+                    <p class="section-label">WASH SETTINGS</p>
+                    <h2>세척 설정</h2>
+                    <label>1차 세척 횟수<input id="setWash1" type="number" value="{{ settings.wash_1_count }}"></label>
+                    <label>2차 세척 횟수<input id="setWash2" type="number" value="{{ settings.wash_2_count }}"></label>
+                    <label>컵 내부 왕복 횟수<input id="setCupInside" type="number" value="{{ settings.cup_inside_count }}"></label>
+                </article>
+
+                <article class="panel">
+                    <p class="section-label">ROBOT SETTINGS</p>
+                    <h2>로봇 설정</h2>
+                    <label>기본 속도<input id="setSpeed" type="number" value="{{ settings.robot_speed }}"></label>
+                    <label>기본 가속도<input id="setAcc" type="number" value="{{ settings.robot_acc }}"></label>
+                </article>
+            </div>
+            <button class="save-settings" onclick="saveSettings()">설정 저장</button>
+        </section>
+    </main>
+</div>
+
+<div id="detailModal" class="modal-overlay hidden" onclick="closeDetailByBackground(event)">
+    <div class="detail-modal">
+        <div class="modal-header">
+            <div>
+                <p class="section-label">DETAIL PROCESS</p>
+                <h2 id="detailModalTitle">상세 작업 단계</h2>
+            </div>
+            <button class="close-button" onclick="closeDetailModal()">×</button>
+        </div>
+        <div id="detailTimeline" class="detail-timeline"></div>
+    </div>
+</div>
+
+<div id="stopOverlay" class="stop-overlay hidden">
+    <div class="stop-modal">
+        <div class="stop-icon">■</div>
+        <h2>작업 정지</h2>
+        <p>메인 노드가 STOP 상태입니다.</p>
+        <p>주변 안전과 식기 파지 상태를 확인한 뒤 리셋하세요.</p>
+        <button onclick="resetStop()">정지 리셋</button>
+    </div>
+</div>
+
+
+<div id="collisionOverlay" class="collision-overlay hidden">
+    <div class="collision-modal">
+        <div class="collision-icon">!</div>
+        <p class="collision-label">COLLISION DETECTED</p>
+        <h2>충격 감지 · 수동 복구</h2>
+        <p class="collision-main-message">로봇이 충격을 감지하여 정지했습니다.</p>
+        <p>로봇 본체, 식기 파지 상태 및 주변 장애물을 확인하세요.</p>
+        <div class="collision-state-code">
+            Robot state: <strong id="collisionRobotState">5</strong>
+        </div>
+        <div id="recoveryStatusBox" class="recovery-status-box">
+            <strong id="recoveryStatusTitle">수동 복구 모드 전환 중</strong>
+            <p id="recoveryStatusMessage">
+                Manual Mode와 Recovery Safe Stop을 적용하고 있습니다.
+            </p>
+        </div>
+        <button id="recoveryCompleteButton"
+                class="recovery-complete-button"
+                onclick="completeCollisionRecovery()"
+                disabled>
+            복구 완료 · 작업 취소
+        </button>
+        <p class="recovery-help">
+            로봇을 손으로 안전한 위치로 옮긴 뒤 복구 완료 · 작업 취소를 누르세요.
+        </p>
+    </div>
+</div>
+
+<script>
+let currentStatus = {{ status|tojson }};
+let displayedProgress = Number(currentStatus.progress || 0);
+let progressAnimationFrame = null;
+
+function setProgressDisplay(value) {
+    const safeValue = Math.max(0, Math.min(100, Number(value) || 0));
+    const roundedValue = Math.round(safeValue);
+
+    document.getElementById("dashProgress").textContent = `${roundedValue}%`;
+    document.getElementById("dashProgressRingText").textContent = `${roundedValue}%`;
+    document.getElementById("dashProgressRing").style.setProperty("--progress", safeValue.toFixed(2));
+}
+
+function animateProgress(targetProgress) {
+    const target = Math.max(0, Math.min(100, Number(targetProgress) || 0));
+
+    if (progressAnimationFrame !== null) {
+        cancelAnimationFrame(progressAnimationFrame);
+        progressAnimationFrame = null;
+    }
+
+    const start = displayedProgress;
+    const distance = target - start;
+
+    if (Math.abs(distance) < 0.1) {
+        displayedProgress = target;
+        setProgressDisplay(target);
+        return;
+    }
+
+    // 큰 단계 변화는 조금 더 길게, 작은 변화는 빠르게 움직입니다.
+    const duration = Math.min(1100, Math.max(450, Math.abs(distance) * 16));
+    const startTime = performance.now();
+
+    function easeOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3);
+    }
+
+    function frame(now) {
+        const elapsed = now - startTime;
+        const ratio = Math.min(1, elapsed / duration);
+        displayedProgress = start + distance * easeOutCubic(ratio);
+        setProgressDisplay(displayedProgress);
+
+        if (ratio < 1) {
+            progressAnimationFrame = requestAnimationFrame(frame);
+        } else {
+            displayedProgress = target;
+            setProgressDisplay(target);
+            progressAnimationFrame = null;
+        }
+    }
+
+    progressAnimationFrame = requestAnimationFrame(frame);
+}
+
+const pageTitles = {
+    dashboard: "Dashboard",
+    operation: "Operation",
+    monitoring: "Monitoring",
+    alarms: "Alarms",
+    settings: "Settings"
+};
+
+function showPage(name) {
+    document.querySelectorAll(".page").forEach(page => page.classList.remove("active"));
+    document.querySelectorAll(".menu-item").forEach(item => item.classList.remove("active"));
+    document.getElementById(`page-${name}`).classList.add("active");
+    document.querySelector(`[data-page="${name}"]`).classList.add("active");
+    document.getElementById("pageTitle").textContent = pageTitles[name];
+
+    if (name === "alarms") refreshAlarms();
+    if (name === "settings") refreshSettings();
+}
+
+async function requestJson(url, options = {}) {
+    const response = await fetch(url, {
+        headers: {"Content-Type": "application/json"},
+        ...options
+    });
+    const result = await response.json();
+    if (!response.ok || result.ok === false) {
+        throw new Error(result.message || "요청 처리 실패");
+    }
+    return result;
+}
+
+async function selectDish(dish) {
+    try {
+        const result = await requestJson("/api/select", {
+            method: "POST",
+            body: JSON.stringify({dish})
+        });
+        render(result.status);
+    } catch (error) { alert(error.message); }
+}
+
+async function goHomePosition() {
+    if (!confirm("로봇을 홈 위치로 이동하시겠습니까?\nIDLE 상태에서만 실행됩니다.")) return;
+
+    try {
+        const result = await requestJson("/api/home", {method: "POST"});
+        render(result.status);
+        refreshAlarms();
+    } catch (error) {
+        alert(error.message);
+        await refreshStatus();
+    }
+}
+
+async function restartGripper() {
+    if (!confirm("그리퍼 전원을 다시 시작하시겠습니까?\n그리퍼와 식기 지지 상태를 먼저 확인하세요.")) return;
+
+    try {
+        const result = await requestJson("/api/gripper/restart", {method: "POST"});
+        render(result.status);
+        refreshAlarms();
+    } catch (error) {
+        alert(error.message);
+        await refreshStatus();
+    }
+}
+
+async function openGripper() {
+    if (!confirm("그리퍼를 여시겠습니까?\n그리퍼가 닫혀 있고 IDLE 상태일 때만 실행됩니다.")) return;
+
+    try {
+        const result = await requestJson("/api/gripper/open", {method: "POST"});
+        render(result.status);
+        refreshAlarms();
+    } catch (error) {
+        alert(error.message);
+        await refreshStatus();
+    }
+}
+
+async function startRobot() {
+    try {
+        const result = await requestJson("/api/start", {method: "POST"});
+        render(result.status);
+    } catch (error) { alert(error.message); }
+}
+
+async function normalStop() {
+    try {
+        const result = await requestJson("/api/stop", {method: "POST"});
+        render(result.status);
+    } catch (error) { alert(error.message); }
+}
+
+async function emergencyStop() {
+    if (!confirm("로봇을 긴급 정지하시겠습니까?")) return;
+    try {
+        const result = await requestJson("/api/emergency-stop", {method: "POST"});
+        render(result.status);
+        refreshAlarms();
+    } catch (error) { alert(error.message); }
+}
+
+
+async function completeCollisionRecovery() {
+    const recovery = currentStatus.recovery || {};
+
+    if (!recovery.active || recovery.entering || recovery.completing) {
+        alert(recovery.message || "아직 복구 완료를 실행할 수 없습니다.");
+        return;
+    }
+
+    const confirmed = confirm(
+        "로봇을 안전한 위치로 이동했습니까?\n\n" +
+        "확인을 누르면 Recovery를 종료하고 자동 모드로 복귀합니다.\n" +
+        "기존 작업은 이미 STOP 처리되었고, 이후 정지 리셋이 필요합니다."
+    );
+    if (!confirmed) return;
+
+    const button = document.getElementById("recoveryCompleteButton");
+    button.disabled = true;
+    button.textContent = "복구 종료 중...";
+
+    try {
+        const result = await requestJson("/api/collision-recovery/complete", {
+            method: "POST"
+        });
+        render(result.status);
+        refreshAlarms();
+        alert("충돌 복구가 완료되었습니다. 기존 작업은 취소되었고 정지 리셋이 필요합니다.");
+    } catch (error) {
+        alert(error.message);
+        await refreshStatus();
+        refreshAlarms();
+    }
+}
+
+async function resetStop() {
+    try {
+        const result = await requestJson("/api/reset-stop", {method: "POST"});
+        render(result.status);
+        refreshAlarms();
+    } catch (error) { alert(error.message); }
+}
+
+function groupSteps(status) {
+    if (status.selected_dish === "접시") {
+        return [
+            {name: "대기", keys: ["plate_waiting"]},
+            {name: "접시 파지", keys: ["plate_grip"]},
+            {name: "음식물 배출", keys: ["plate_discard"]},
+            {name: "1차 앞면", keys: ["plate_front_1"]},
+            {name: "1차 뒷면", keys: ["plate_back_1"]},
+            {name: "접시 회전", keys: ["plate_rotate"]},
+            {name: "2차 앞면", keys: ["plate_front_2"]},
+            {name: "2차 뒷면", keys: ["plate_back_2"]},
+            {name: "완료 위치", keys: ["plate_store"]},
+            {name: "완료", keys: ["plate_complete"]}
+        ];
+    }
+    if (status.selected_dish === "컵") {
+        return [
+            {name: "대기", keys: ["cup_waiting"]},
+            {name: "컵 파지", keys: ["cup_grip"]},
+            {name: "잔여물 판정·배출", keys: ["cup_residue_discard"]},
+            {name: "손잡이 주변 세척", keys: ["cup_handle_wash"]},
+            {name: "뒤집기·재파지", keys: ["cup_flip_regrip"]},
+            {name: "컵 내부 세척", keys: ["cup_inside_wash"]},
+            {name: "컵 외부 세척", keys: ["cup_outside_wash"]},
+            {name: "최종 배치·완료", keys: ["cup_complete"]}
+        ];
+    }
+    return [
+        {name: "대기", keys: ["bowl_waiting"]},
+        {name: "식기 파지", keys: ["bowl_grip"]},
+        {name: "음식물 판정 및 배출", keys: ["bowl_food_discard"]},
+        {name: "내부 세척", keys: ["bowl_inside_wash"]},
+        {name: "식기 재파지", keys: ["bowl_regrip"]},
+        {name: "외부 세척", keys: ["bowl_outside_wash"]},
+        {name: "그릇 밑면 세척", keys: ["bowl_bottom_wash"]},
+        {name: "원위치 배치", keys: ["bowl_return"]}
+    ];
+}
+
+function renderCompactTimeline(status, targetId) {
+    const target = document.getElementById(targetId);
+    target.innerHTML = "";
+    const groups = groupSteps(status);
+    const currentIndex = groups.findIndex(group => group.keys.includes(status.current_step));
+
+    groups.forEach((group, index) => {
+        const state = index < currentIndex ? "done" : index === currentIndex ? "active" : "";
+        const item = document.createElement("div");
+        item.className = `compact-step ${state}`;
+        item.innerHTML = `<span>${index + 1}</span><strong>${group.name}</strong>`;
+        target.appendChild(item);
+    });
+}
+
+function renderMonitorTimeline(status) {
+    const target = document.getElementById("monitorTimeline");
+    target.innerHTML = "";
+    status.steps.forEach((step, index) => {
+        const state = index < status.current_step_index ? "done" : index === status.current_step_index ? "active" : "";
+        const item = document.createElement("div");
+        item.className = `monitor-step ${state}`;
+        item.innerHTML = `
+            <div>${step.code ?? (index + 1)}</div>
+            <section>
+                <strong>${step.name}</strong>
+                <p>${step.description}</p>
+            </section>
+        `;
+        target.appendChild(item);
+    });
+}
+
+function renderDetailTimeline(status) {
+    const target = document.getElementById("detailTimeline");
+    target.innerHTML = "";
+    document.getElementById("detailModalTitle").textContent =
+        `${status.selected_dish} 세척 상세 단계`;
+
+    status.steps.forEach((step, index) => {
+        const state = index < status.current_step_index ? "done" : index === status.current_step_index ? "active" : "";
+        const item = document.createElement("div");
+        item.className = `detail-step ${state}`;
+        item.innerHTML = `
+            <div>${step.code ?? (index + 1)}</div>
+            <section>
+                <strong>${step.name}</strong>
+                <p>${step.description}</p>
+            </section>
+        `;
+        target.appendChild(item);
+    });
+}
+
+function openDetailModal() {
+    renderDetailTimeline(currentStatus);
+    document.getElementById("detailModal").classList.remove("hidden");
+}
+
+function closeDetailModal() {
+    document.getElementById("detailModal").classList.add("hidden");
+}
+
+function closeDetailByBackground(event) {
+    if (event.target.id === "detailModal") closeDetailModal();
+}
+
+async function refreshAlarms() {
+    try {
+        const response = await fetch("/api/alarms");
+        const data = await response.json();
+        const body = document.getElementById("alarmTableBody");
+        body.innerHTML = "";
+        data.forEach(alarm => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${alarm.time}</td>
+                <td><span class="alarm-level ${alarm.level}">${alarm.level}</span></td>
+                <td><strong>${alarm.title}</strong></td>
+                <td>${alarm.message}</td>
+                <td>${alarm.status}</td>
+            `;
+            body.appendChild(row);
+        });
+    } catch (error) { console.error(error); }
+}
+
+async function refreshSettings() {
+    try {
+        const response = await fetch("/api/settings");
+        const data = await response.json();
+        document.getElementById("setFoodThreshold").value = data.food_threshold;
+        document.getElementById("setSampleCount").value = data.sample_count;
+        document.getElementById("setWash1").value = data.wash_1_count;
+        document.getElementById("setWash2").value = data.wash_2_count;
+        document.getElementById("setCupInside").value = data.cup_inside_count;
+        document.getElementById("setSpeed").value = data.robot_speed;
+        document.getElementById("setAcc").value = data.robot_acc;
+    } catch (error) { console.error(error); }
+}
+
+async function saveSettings() {
+    try {
+        await requestJson("/api/settings", {
+            method: "POST",
+            body: JSON.stringify({
+                food_threshold: Number(document.getElementById("setFoodThreshold").value),
+                sample_count: Number(document.getElementById("setSampleCount").value),
+                wash_1_count: Number(document.getElementById("setWash1").value),
+                wash_2_count: Number(document.getElementById("setWash2").value),
+                cup_inside_count: Number(document.getElementById("setCupInside").value),
+                robot_speed: Number(document.getElementById("setSpeed").value),
+                robot_acc: Number(document.getElementById("setAcc").value)
+            })
+        });
+        alert("설정이 저장되었습니다.");
+        refreshAlarms();
+    } catch (error) { alert(error.message); }
+}
+
+function isGripperClosedText(value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (!text) return false;
+
+    const openKeywords = ["open", "opened", "열림", "열기", "열려", "release", "released"];
+    if (openKeywords.some(keyword => text.includes(keyword))) return false;
+
+    const closedKeywords = [
+        "close", "closed", "닫", "grip", "gripped",
+        "holding", "hold", "파지", "잡힘", "clamp", "clamped"
+    ];
+    return closedKeywords.some(keyword => text.includes(keyword));
+}
+
+function render(status) {
+    currentStatus = status;
+    const total = Object.values(status.completed).reduce((a, b) => a + b, 0);
+
+    const mainState = status.main_state || "INIT";
+    const stateText = mainState === "INIT" ? "초기화 중" :
+        mainState === "IDLE" ? "대기 중" :
+        mainState === "RUN" ? "작동 중" :
+        mainState === "STOP" ? "정지됨" : mainState;
+
+    document.getElementById("dashRobotState").textContent = stateText;
+    document.getElementById("dashRobotMessage").textContent = status.message;
+    document.getElementById("dashDish").textContent = status.selected_dish;
+    animateProgress(status.progress);
+    document.getElementById("dashProcess").textContent = status.current_process;
+    document.getElementById("dashTotal").textContent = `${total}개`;
+    document.getElementById("dashDishBadge").textContent = status.selected_dish;
+    document.getElementById("dashCurrentProcess").textContent = status.current_process;
+    document.getElementById("dashMessage").textContent = status.message;
+
+    document.getElementById("opDish").textContent = status.selected_dish;
+    document.getElementById("opState").textContent = stateText;
+    document.getElementById("opProcess").textContent = status.current_process;
+
+    const sensor = status.sensor || {};
+    const forceAll = Array.isArray(sensor.force_all) ? sensor.force_all : [0, 0, 0, 0, 0, 0];
+    const topics = sensor.topics || {};
+
+    const ros = status.ros || {};
+    document.getElementById("sensorMagnitude").textContent = `${Number(sensor.force_magnitude || 0).toFixed(3)} N`;
+    document.getElementById("sensorFood").textContent = `${Number(sensor.fz || 0).toFixed(3)} N`;
+    const sensorGripperElement = document.getElementById("sensorGripper");
+    const gripperSafetyStop = Boolean(sensor.gripper_safety_stop);
+    const gripperClosed = Boolean(sensor.gripper_closed) || isGripperClosedText(sensor.gripper);
+    sensorGripperElement.textContent = sensor.gripper || "미연동";
+    sensorGripperElement.classList.toggle("danger", gripperSafetyStop);
+    sensorGripperElement.classList.toggle("good", !gripperSafetyStop && sensor.gripper === "정상");
+    const robotStateCode = sensor.robot_state_code;
+    document.getElementById("sensorMode").textContent = robotStateCode == null
+        ? (sensor.robot_mode || "대기")
+        : `${sensor.robot_mode || "상태"} (${robotStateCode})`;
+    document.getElementById("sensorConnection").textContent = sensor.connection || "수신 대기";
+    document.getElementById("sensorConnection").classList.toggle("good", sensor.connection === "정상");
+
+    const forceAllElement = document.getElementById("topicForceAll");
+    forceAllElement.textContent = topics.force_all ? "수신 중" : "수신 대기";
+    forceAllElement.classList.toggle("good", Boolean(topics.force_all));
+
+    const magnitudeElement = document.getElementById("topicMagnitude");
+    magnitudeElement.textContent = topics.force_magnitude ? "수신 중" : "수신 대기";
+    magnitudeElement.classList.toggle("good", Boolean(topics.force_magnitude));
+
+    const gripperElement = document.getElementById("topicGripper");
+    gripperElement.textContent = topics.gripper ? "수신 중" : "수신 대기";
+    gripperElement.classList.toggle("good", Boolean(topics.gripper));
+
+    const gripperSafetyElement = document.getElementById("topicGripperSafety");
+    if (gripperSafetyElement) {
+        gripperSafetyElement.textContent = topics.gripper_safety_stop
+            ? (gripperSafetyStop ? "안전 정지" : "정상")
+            : "수신 대기";
+        gripperSafetyElement.classList.toggle("danger", gripperSafetyStop);
+        gripperSafetyElement.classList.toggle("good", Boolean(topics.gripper_safety_stop) && !gripperSafetyStop);
+    }
+
+    const robotStateElement = document.getElementById("topicProcessPlate");
+    robotStateElement.textContent = sensor.robot_state_code == null ? "연결 대기" : "조회 중";
+    robotStateElement.classList.toggle("good", sensor.robot_state_code != null);
+
+    const bowlProcessElement = document.getElementById("topicProcessBowl");
+    if (bowlProcessElement) {
+        bowlProcessElement.textContent = topics.process_bowl ? "수신 중" : "수신 대기";
+        bowlProcessElement.classList.toggle("good", Boolean(topics.process_bowl));
+    }
+
+    const cupProcessElement = document.getElementById("topicProcessCup");
+    if (cupProcessElement) {
+        cupProcessElement.textContent = topics.process_cup ? "수신 중" : "수신 대기";
+        cupProcessElement.classList.toggle("good", Boolean(topics.process_cup));
+    }
+
+    document.getElementById("forceFx").textContent = `${Number(forceAll[0] || 0).toFixed(3)} N`;
+    document.getElementById("forceFy").textContent = `${Number(forceAll[1] || 0).toFixed(3)} N`;
+    document.getElementById("forceFz").textContent = `${Number(forceAll[2] || 0).toFixed(3)} N`;
+    document.getElementById("forceMx").textContent = `${Number(forceAll[3] || 0).toFixed(3)} Nm`;
+    document.getElementById("forceMy").textContent = `${Number(forceAll[4] || 0).toFixed(3)} Nm`;
+    document.getElementById("forceMz").textContent = `${Number(forceAll[5] || 0).toFixed(3)} Nm`;
+
+    Object.entries(status.completed).forEach(([dish, count]) => {
+        const element = document.getElementById(`dashCount-${dish}`);
+        if (element) element.textContent = count;
+    });
+
+    const startEnabled = mainState === "IDLE";
+    const stopEnabled = mainState === "RUN";
+    const resetEnabled = mainState === "STOP";
+    const dishEnabled = mainState === "IDLE";
+
+    document.querySelectorAll(".dish-button").forEach(button => {
+        button.classList.toggle("selected", button.dataset.dish === status.selected_dish);
+        button.disabled = !dishEnabled;
+        button.title = dishEnabled ? "식기를 선택할 수 있습니다." : "IDLE 상태에서만 식기를 선택할 수 있습니다.";
+    });
+
+    function setButtonState(id, enabled, enabledTitle, disabledTitle) {
+        const element = document.getElementById(id);
+        if (!element) return;
+        element.disabled = !enabled;
+        element.classList.toggle("button-disabled", !enabled);
+        element.title = enabled ? enabledTitle : disabledTitle;
+    }
+
+    setButtonState(
+        "startButton",
+        startEnabled,
+        "선택한 식기 작업을 시작합니다.",
+        "IDLE 상태에서만 작업 시작을 누를 수 있습니다."
+    );
+    setButtonState(
+        "stopButton",
+        stopEnabled,
+        "현재 작업을 정지합니다.",
+        "RUN 상태에서만 작업 정지를 누를 수 있습니다."
+    );
+    setButtonState(
+        "emergencyButton",
+        stopEnabled,
+        "현재 작업을 긴급 정지합니다.",
+        "RUN 상태에서만 긴급 정지를 누를 수 있습니다."
+    );
+    setButtonState(
+        "resetButton",
+        resetEnabled,
+        "STOP 상태를 해제하고 대기로 복귀합니다.",
+        "STOP 상태에서만 정지 리셋을 누를 수 있습니다."
+    );
+    setButtonState(
+        "homePositionButton",
+        mainState === "IDLE",
+        "로봇을 홈 위치로 이동합니다.",
+        "홈 위치 이동은 IDLE 상태에서만 사용할 수 있습니다."
+    );
+    setButtonState(
+        "gripperOpenButton",
+        mainState === "IDLE" && gripperClosed && !gripperSafetyStop,
+        "닫혀있는 그리퍼를 엽니다.",
+        gripperSafetyStop
+            ? "그리퍼 안전 정지 상태에서는 그리퍼 열기를 사용할 수 없습니다."
+            : mainState !== "IDLE"
+                ? "그리퍼 열기는 IDLE 상태에서만 사용할 수 있습니다."
+                : "그리퍼가 닫혀있을 때만 사용할 수 있습니다."
+    );
+    setButtonState(
+        "gripperRestartButton",
+        gripperSafetyStop && !Boolean(sensor.gripper_restart_pending),
+        "빨간 LED 안전 모드의 그리퍼 전원을 다시 시작합니다.",
+        gripperSafetyStop
+            ? "그리퍼 다시 시작 요청이 진행 중입니다."
+            : "그리퍼가 안전 모드(빨간색)일 때만 사용할 수 있습니다."
+    );
+
+    const hint = document.getElementById("controlHint");
+    if (hint) {
+        if (mainState === "INIT") {
+            hint.textContent = "초기화 중입니다. 아직 조작할 수 없습니다.";
+        } else if (mainState === "IDLE") {
+            hint.textContent = "대기 상태입니다. 식기를 선택한 뒤 작업 시작을 누르세요.";
+        } else if (mainState === "RUN") {
+            hint.textContent = "작업 중입니다. 작업 시작은 비활성화되고 정지 버튼만 사용할 수 있습니다.";
+        } else if (mainState === "STOP") {
+            hint.textContent = "정지 상태입니다. 다음 작업을 하려면 정지 리셋을 눌러야 합니다.";
+        } else {
+            hint.textContent = `현재 상태: ${mainState}`;
+        }
+    }
+
+    const sideState = document.getElementById("sideRobotState");
+    sideState.className = "side-state";
+    sideState.classList.add(mainState === "STOP" ? "stopped" : mainState === "RUN" ? "running" : "waiting");
+    document.getElementById("sideRobotStateText").textContent = stateText;
+
+    // STOP 상태도 상태 글자로만 표시하고 화면을 막는 오버레이는 띄우지 않습니다.
+    document.getElementById("stopOverlay").classList.add("hidden");
+    document.getElementById("collisionOverlay").classList.toggle(
+        "hidden",
+        !Boolean(status.collision_alert)
+    );
+
+    const recovery = status.recovery || {};
+    const recoveryButton = document.getElementById("recoveryCompleteButton");
+    const recoveryTitle = document.getElementById("recoveryStatusTitle");
+    const recoveryMessage = document.getElementById("recoveryStatusMessage");
+    const recoveryBox = document.getElementById("recoveryStatusBox");
+    const collisionState = document.getElementById("collisionRobotState");
+
+    if (collisionState) {
+        collisionState.textContent = sensor.robot_state_code ?? 5;
+    }
+
+    if (recoveryButton && recoveryTitle && recoveryMessage && recoveryBox) {
+        recoveryBox.classList.toggle("error", Boolean(recovery.error));
+
+        if (recovery.entering) {
+            recoveryTitle.textContent = "수동 복구 모드 전환 중";
+            recoveryButton.textContent = "전환 중...";
+            recoveryButton.disabled = true;
+        } else if (recovery.completing) {
+            recoveryTitle.textContent = "복구 종료 중";
+            recoveryButton.textContent = "복귀 중...";
+            recoveryButton.disabled = true;
+        } else if (recovery.active) {
+            recoveryTitle.textContent = "수동 복구 모드";
+            recoveryButton.textContent = "복구 완료 · 작업 취소";
+            recoveryButton.disabled = false;
+        } else if (recovery.error) {
+            recoveryTitle.textContent = "복구 처리 오류";
+            recoveryButton.textContent = "복구 완료 · 작업 취소";
+            recoveryButton.disabled = true;
+        } else {
+            recoveryTitle.textContent = "충돌 상태 확인 중";
+            recoveryButton.textContent = "복구 완료 · 작업 취소";
+            recoveryButton.disabled = true;
+        }
+
+        recoveryMessage.textContent =
+            recovery.error || recovery.message || "충돌 복구 상태를 확인하고 있습니다.";
+    }
+
+    renderCompactTimeline(status, "dashCompactTimeline");
+    renderMonitorTimeline(status);
+
+    if (!document.getElementById("detailModal").classList.contains("hidden")) {
+        renderDetailTimeline(status);
+    }
+}
+
+async function refreshStatus() {
+    try {
+        const response = await fetch("/api/status");
+        render(await response.json());
+    } catch (error) { console.error(error); }
+}
+
+function updateClock() {
+    document.getElementById("headerClock").textContent =
+        new Date().toLocaleString("ko-KR");
+}
+
+document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeDetailModal();
+});
+
+setProgressDisplay(displayedProgress);
+render(currentStatus);
+refreshAlarms();
+updateClock();
+setInterval(refreshStatus, 1000);
+setInterval(updateClock, 1000);
+</script>
+</body>
+</html>
